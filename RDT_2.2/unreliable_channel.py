@@ -25,15 +25,15 @@ class Packet:
         return self.checksum != self.compute_checksum()
 
 class UnreliableChannel:
-    def __init__(self, corruption_prob=0.1):
+    def __init__(self, corruption_prob=0.7):
         self.to_server_queue = queue.Queue()
         self.to_client_queue = queue.Queue()
         self.corruption_prob = corruption_prob
 
     def send_to_server(self, packet):
         corrupted_packet = Packet(packet.type, packet.seq_num, packet.payload, packet.checksum)
-        
-        if random.random() < self.corruption_prob:
+        rand = random.random()
+        if rand < self.corruption_prob:
             if corrupted_packet.type == "DATA":
                 if random.choice([True, False]):
                     corrupted_packet.seq_num = 1 - corrupted_packet.seq_num

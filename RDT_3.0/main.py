@@ -22,7 +22,7 @@ def main():
             if client.receive_ack():
                 break
             client.check_timeout()
-            time.sleep(0.1)  # Simulate processing delay
+            time.sleep(0.1)  
 
     print("\nSIMULATION COMPLETE!!")
 

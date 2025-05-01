@@ -29,7 +29,7 @@ def simulate_tcp_tahoe(initial_ssthresh, p, num_rtts):
             if random.random() < p:
                 if random.random() < 0.5:
                     ssthresh = max(cwnd // 2, 2)
-                    cwnd = 1  # Changed from cwnd = ssthresh for Tahoe
+                    cwnd = 1  
                     loss_rtts.append(rtt)
                     loss_types.append(0)
                     in_recovery = True
@@ -95,7 +95,7 @@ def main():
     p = float(input())
     print("Enter number of RTTs to simulate: ")
     num_rtts = int(input())
-    simulate_tcp_tahoe(initial_ssthresh, p, num_rtts)  # Updated function call
+    simulate_tcp_tahoe(initial_ssthresh, p, num_rtts)  
 
 if __name__ == "__main__":
     main()

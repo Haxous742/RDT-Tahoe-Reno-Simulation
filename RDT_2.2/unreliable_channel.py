@@ -25,7 +25,7 @@ class Packet:
         return self.checksum != self.compute_checksum()
 
 class UnreliableChannel:
-    def __init__(self, corruption_prob=0.7):
+    def __init__(self, corruption_prob=0.9):
         self.to_server_queue = queue.Queue()
         self.to_client_queue = queue.Queue()
         self.corruption_prob = corruption_prob

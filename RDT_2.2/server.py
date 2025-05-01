@@ -1,4 +1,4 @@
-from unreliable_channel import Packet, UnreliableChannel
+from unreliable_channel import Packet
 from colorama import Fore, Style, init
 
 init(autoreset=True)

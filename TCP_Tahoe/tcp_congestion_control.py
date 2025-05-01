@@ -79,8 +79,7 @@ def simulate_tcp_tahoe(initial_ssthresh, p, num_rtts):
         plt.scatter(timeout_rtts, timeout_cwnds, color='blue', label='Timeout')
     plt.xlabel('RTT')
     plt.ylabel('Congestion Window (MSS)')
-    plt.title('TCP Tahoe Congestion Control Simulation')  # Updated title
-    plt.legend()
+    plt.title('TCP Tahoe Congestion Control Simulation')  
     plt.grid(True)
     plt.show()
 

@@ -1,219 +1,101 @@
 import matplotlib.pyplot as plt
-import numpy as np
 import random
-import argparse
+import math
 
-class TCPCongestionControl:
-    def __init__(self, mss=1, initial_ssthresh=16, rtt=1, loss_type='interval', loss_param=10, 
-                 total_time=100, random_seed=None):
-        """
-        Initialize TCP congestion control simulation.
-        
-        Parameters:
-        - mss: Maximum Segment Size (in arbitrary units)
-        - initial_ssthresh: Initial slow-start threshold
-        - rtt: Round-trip time (in arbitrary time units)
-        - loss_type: 'interval' (loss every N RTTs) or 'probability' (random loss)
-        - loss_param: For 'interval', this is the number of RTTs between losses
-                      For 'probability', this is the probability of loss per RTT
-        - total_time: Total simulation time in RTTs
-        - random_seed: Seed for random number generator (for reproducibility)
-        """
-        self.mss = mss
-        self.initial_ssthresh = initial_ssthresh
-        self.rtt = rtt
-        self.loss_type = loss_type
-        self.loss_param = loss_param
-        self.total_time = total_time
-        
-        # Set random seed if provided
-        if random_seed is not None:
-            random.seed(random_seed)
-            np.random.seed(random_seed)
-        
-        # Initialize TCP state
-        self.cwnd = mss  # Start with cwnd = 1 MSS
-        self.ssthresh = initial_ssthresh * mss  # Initial ssthresh in bytes
-        self.mode = "slow_start"  # Start in slow start mode
-        
-        # History trackers for visualization
-        self.time_points = []
-        self.cwnd_history = []
-        self.ssthresh_history = []
-        self.events = []  # To mark loss events on the graph
-        
-        # Counters for analysis
-        self.dup_ack_count = 0
-        self.total_packets_sent = 0
-        self.total_packets_acked = 0
-        
-    def will_packet_be_lost(self, current_time):
-        """Determine if a packet will be lost based on the loss model."""
-        if self.loss_type == 'interval':
-            # Loss occurs every loss_param RTTs
-            return current_time > 0 and current_time % self.loss_param == 0
-        elif self.loss_type == 'probability':
-            # Loss occurs with probability loss_param
-            return random.random() < self.loss_param
-        return False
-    
-    def handle_timeout(self, current_time):
-        """Handle a timeout event."""
-        print(f"Time {current_time}: TIMEOUT detected")
-        # Update ssthresh to half of current cwnd (minimum 2*MSS)
-        self.ssthresh = max(2 * self.mss, self.cwnd // 2)
-        # Reset cwnd to 1 MSS
-        self.cwnd = self.mss
-        # Reset to slow start
-        self.mode = "slow_start"
-        # Record the event for visualization
-        self.events.append((current_time, "Timeout"))
-    
-    def handle_triple_duplicate_ack(self, current_time):
-        """Handle triple duplicate ACK (fast retransmit)."""
-        print(f"Time {current_time}: TRIPLE DUPLICATE ACK detected")
-        # Update ssthresh to half of current cwnd
-        self.ssthresh = max(2 * self.mss, self.cwnd // 2)
-        # Set cwnd to ssthresh (fast recovery)
-        self.cwnd = self.ssthresh
-        # Reset duplicate ACK counter
-        self.dup_ack_count = 0
-        # Switch to congestion avoidance
-        self.mode = "congestion_avoidance"
-        # Record the event for visualization
-        self.events.append((current_time, "Triple Dup ACK"))
-    
-    def update_congestion_window(self, current_time):
-        """Update the congestion window based on current mode."""
-        # Record current state
-        self.time_points.append(current_time)
-        self.cwnd_history.append(self.cwnd)
-        self.ssthresh_history.append(self.ssthresh)
-        
-        # Check for packet loss
-        if self.will_packet_be_lost(current_time):
-            # Randomly choose between timeout and triple duplicate ACK
-            # In a more advanced simulation, this would depend on network conditions
-            loss_type = random.choice(["timeout", "triple_dup_ack"])
-            
-            if loss_type == "timeout":
-                self.handle_timeout(current_time)
+GREEN = '\033[92m'
+YELLOW = '\033[93m'
+RED = '\033[91m'
+BLUE = '\033[94m'
+RESET = '\033[0m'
+
+def simulate_tcp_tahoe(initial_ssthresh, p, num_rtts):
+    cwnd = 1
+    ssthresh = initial_ssthresh
+    cwnd_list = []
+    ssthresh_list = []
+    loss_rtts = []
+    loss_types = []
+    in_recovery = False
+
+    def is_power_of_2(n):
+        return n != 0 and (n & (n - 1)) == 0
+
+    for rtt in range(num_rtts):
+        print(f"{GREEN}RTT {rtt}: cwnd = {cwnd}, ssthresh = {ssthresh}{RESET}")
+        cwnd_list.append(cwnd)
+        ssthresh_list.append(ssthresh)
+
+        if cwnd >= ssthresh and not in_recovery:
+            if random.random() < p:
+                if random.random() < 0.5:
+                    ssthresh = max(cwnd // 2, 2)
+                    cwnd = 1  # Changed from cwnd = ssthresh for Tahoe
+                    loss_rtts.append(rtt)
+                    loss_types.append(0)
+                    in_recovery = True
+                    print(f"{RED}Triple Duplicate ACK at RTT {rtt}: ssthresh set to {ssthresh}, cwnd set to {cwnd}{RESET}")
+                else:
+                    ssthresh = max(cwnd // 2, 2)
+                    cwnd = 1
+                    loss_rtts.append(rtt)
+                    loss_types.append(1)
+                    in_recovery = True
+                    print(f"{RED}Timeout at RTT {rtt}: ssthresh set to {ssthresh}, cwnd set to {cwnd}{RESET}")
             else:
-                self.handle_triple_duplicate_ack(current_time)
+                cwnd += 1
+                print(f"{BLUE}Congestion Avoidance: cwnd increased to {cwnd}{RESET}")
         else:
-            # No loss - update cwnd according to current phase
-            if self.mode == "slow_start":
-                print(f"Time {current_time}: Slow Start - cwnd = {self.cwnd}, ssthresh = {self.ssthresh}")
-                # In slow start, cwnd increases by 1 MSS for each ACK
-                # Simplified to increase by cwnd after each RTT
-                self.cwnd += self.cwnd
-                
-                # Check if we should transition to congestion avoidance
-                if self.cwnd >= self.ssthresh:
-                    print(f"Time {current_time}: Transitioning to Congestion Avoidance")
-                    self.mode = "congestion_avoidance"
-            
-            elif self.mode == "congestion_avoidance":
-                print(f"Time {current_time}: Congestion Avoidance - cwnd = {self.cwnd}, ssthresh = {self.ssthresh}")
-                # In congestion avoidance, cwnd increases by MSS*MSS/cwnd per RTT
-                # This is approximately 1 MSS per RTT
-                self.cwnd += max(1, (self.mss * self.mss) // self.cwnd)
-    
-    def run_simulation(self):
-        """Run the TCP congestion control simulation for the specified time."""
-        for t in range(self.total_time):
-            self.update_congestion_window(t)
-            
-        return {
-            'time': self.time_points,
-            'cwnd': self.cwnd_history,
-            'ssthresh': self.ssthresh_history,
-            'events': self.events
-        }
-    
-    def plot_results(self):
-        """Plot the simulation results."""
-        plt.figure(figsize=(12, 6))
-        
-        # Plot cwnd
-        plt.plot(self.time_points, self.cwnd_history, label='cwnd', color='blue')
-        
-        # Plot ssthresh
-        plt.plot(self.time_points, self.ssthresh_history, label='ssthresh', color='red', linestyle='--')
-        
-        # Mark loss events
-        for time, event_type in self.events:
-            if event_type == "Timeout":
-                plt.axvline(x=time, color='orange', linestyle='-', alpha=0.5)
-                plt.text(time, max(self.cwnd_history) * 0.9, "TO", rotation=90)
-            else:  # Triple Duplicate ACK
-                plt.axvline(x=time, color='green', linestyle='-', alpha=0.5)
-                plt.text(time, max(self.cwnd_history) * 0.9, "3DA", rotation=90)
-        
-        # Add labels and title
-        plt.xlabel('Time (RTTs)')
-        plt.ylabel('Congestion Window (bytes)')
-        plt.title('TCP Congestion Window Over Time')
-        plt.legend()
-        plt.grid(True)
-        
-        # Ensure y-axis starts at 0
-        plt.ylim(bottom=0)
-        
-        # Save the figure
-        plt.savefig('tcp_congestion_window.png')
-        plt.tight_layout()
-        plt.show()
+            if cwnd < ssthresh:
+                next_cwnd = cwnd * 2
+                if next_cwnd < ssthresh:
+                    cwnd = next_cwnd
+                    print(f"{YELLOW}Slow Start: cwnd doubled to {cwnd}{RESET}")
+                else:
+                    if not is_power_of_2(ssthresh):
+                        largest_power = 1 << int(math.log2(ssthresh))
+                        if cwnd == largest_power:
+                            cwnd = ssthresh
+                            print(f"{YELLOW}Slow Start: cwnd set to ssthresh = {cwnd} (transition to congestion avoidance){RESET}")
+                        elif cwnd < largest_power:
+                            cwnd = next_cwnd
+                            print(f"{YELLOW}Slow Start: cwnd doubled to {cwnd}{RESET}")
+                    else:
+                        cwnd = next_cwnd
+                        print(f"{YELLOW}Slow Start: cwnd doubled to {cwnd}{RESET}")
+            else:
+                cwnd += 1
+                print(f"{BLUE}Congestion Avoidance (post-loss): cwnd increased to {cwnd}{RESET}")
+                in_recovery = False
 
-def parse_arguments():
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description='TCP Congestion Control Simulation')
-    parser.add_argument('--mss', type=int, default=1, help='Maximum Segment Size')
-    parser.add_argument('--ssthresh', type=int, default=16, help='Initial slow-start threshold (in MSS units)')
-    parser.add_argument('--rtt', type=float, default=1, help='Round-trip time')
-    parser.add_argument('--loss_type', choices=['interval', 'probability'], default='interval', 
-                        help='Type of loss model: interval or probability')
-    parser.add_argument('--loss_param', type=float, default=10, 
-                        help='Loss parameter: interval length or probability')
-    parser.add_argument('--time', type=int, default=100, help='Total simulation time (in RTTs)')
-    parser.add_argument('--seed', type=int, default=None, help='Random seed for reproducibility')
-    return parser.parse_args()
+    plt.plot(range(num_rtts), cwnd_list, label='cwnd', color='green')
+    plt.plot(range(num_rtts), ssthresh_list, label='ssthresh', linestyle='--', color='orange')
+    triple_dup_rtts = [rtt for rtt, typ in zip(loss_rtts, loss_types) if typ == 0]
+    triple_dup_cwnds = [cwnd_list[rtt] for rtt in triple_dup_rtts]
+    timeout_rtts = [rtt for rtt, typ in zip(loss_rtts, loss_types) if typ == 1]
+    timeout_cwnds = [cwnd_list[rtt] for rtt in timeout_rtts]
+    if triple_dup_rtts:
+        plt.scatter(triple_dup_rtts, triple_dup_cwnds, color='red', label='Triple Dup ACK')
+    if timeout_rtts:
+        plt.scatter(timeout_rtts, timeout_cwnds, color='blue', label='Timeout')
+    plt.xlabel('RTT')
+    plt.ylabel('Congestion Window (MSS)')
+    plt.title('TCP Tahoe Congestion Control Simulation')  # Updated title
+    plt.legend()
+    plt.grid(True)
+    plt.show()
 
 def main():
-    """Main function to run the TCP congestion control simulation."""
-    # Parse command line arguments
-    args = parse_arguments()
-    
-    # Create and run the simulation
-    tcp_sim = TCPCongestionControl(
-        mss=args.mss,
-        initial_ssthresh=args.ssthresh,
-        rtt=args.rtt,
-        loss_type=args.loss_type,
-        loss_param=args.loss_param,
-        total_time=args.time,
-        random_seed=args.seed
-    )
-    
-    # Run the simulation
-    results = tcp_sim.run_simulation()
-    
-    # Plot and save the results
-    tcp_sim.plot_results()
-    
-    # Print final statistics
-    print("\nSimulation Complete!")
-    print(f"Final cwnd: {tcp_sim.cwnd}")
-    print(f"Final ssthresh: {tcp_sim.ssthresh}")
-    print(f"Total loss events: {len(tcp_sim.events)}")
-    print(f"Timeouts: {sum(1 for _, event in tcp_sim.events if event == 'Timeout')}")
-    print(f"Triple duplicate ACKs: {sum(1 for _, event in tcp_sim.events if event == 'Triple Dup ACK')}")
-    
-    # Calculate average throughput (simplified)
-    avg_cwnd = sum(tcp_sim.cwnd_history) / len(tcp_sim.cwnd_history)
-    print(f"Average cwnd: {avg_cwnd:.2f}")
-    print(f"Simulation time: {args.time} RTTs")
-    print(f"Graph saved as 'tcp_congestion_window.png'")
+    print("Enter RTT (in seconds): ")
+    rtt = float(input())
+    print("Enter MSS size (in bytes): ")
+    mss = int(input())
+    print("Enter initial ssthresh (in MSS): ")
+    initial_ssthresh = int(input())
+    print("Enter probability of loss events per RTT during congestion avoidance (0 to 1): ")
+    p = float(input())
+    print("Enter number of RTTs to simulate: ")
+    num_rtts = int(input())
+    simulate_tcp_tahoe(initial_ssthresh, p, num_rtts)  # Updated function call
 
 if __name__ == "__main__":
     main()
